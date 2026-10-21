@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>NSFW 成分检测机</title>
+<style>
+  :root{
+    --bg:#0a0710;
+    --txt:#f6f0fa;
+    --dim:#9d8caa;
+    --line:rgba(255,255,255,.10);
+    --card:rgba(255,255,255,.05);
+    --pink:#ff2d75;
+    --violet:#b06bff;
+  }
+  *{box-sizing:border-box;}
+  html{min-height:100%;}
+  body{
+    margin:0; min-height:100vh; padding:36px 16px 64px;
+    background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    display:flex; justify-content:center; overflow-x:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before,body::after{
+    content:""; position:fixed; border-radius:50%; filter:blur(90px);
+    opacity:.42; pointer-events:none; z-index:0;
+  }
+  body::before{width:520px;height:520px;background:#ff2d75;top:-240px;left:-180px;}
+  body::after{width:560px;height:560px;background:#7c3aed;bottom:-280px;right:-220px;}
+
+  .app{position:relative;z-index:1;width:100%;max-width:840px;}
+  .head{margin-bottom:22px;}
+  h1{
+    margin:0 0 10px; font-size:clamp(23px,5.2vw,34px); letter-spacing:.01em;
+    background:linear-gradient(100deg,#ffffff 8%,#ff90bd 46%,#b06bff 92%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .sub{margin:0;color:var(--dim);font-size:13.5px;line-height:1.65;}
+  .sub b{color:#ffa8c9;font-weight:600;}
+
+  .panel{
+    background:var(--card); border:1px solid var(--line); border-radius:20px;
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); padding:16px;
+  }
+
+  .inputbar{display:flex; gap:10px; flex-wrap:wrap;}
+  .inputbar input{
+    flex:1 1 220px; min-width:0; height:50px; padding:0 16px;
+    background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:14px;
+    color:var(--txt); font-size:15px; outline:none; transition:.22s;
+  }
+  .inputbar input::placeholder{color:#6f6279;}
+  .inputbar input:focus{border-color:rgba(255,45,117,.65); box-shadow:0 0 0 4px rgba(255,45,117,.13);}
+  .inputbar input.shake{animation:shake .34s;}
+  @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+  .btn{
+    height:50px; padding:0 24px; border-radius:14px; border:0; cursor:pointer;
+    font-size:15px; font-weight:600; color:#1a0b16; letter-spacing:.03em;
+    background:linear-gradient(120deg,#ff5e9b,#ff2d75 42%,#a855f7);
+    box-shadow:0 8px 26px -10px rgba(255,45,117,.85);
+    transition:transform .16s, filter .16s;
+    font-family:inherit;
+  }
+  .btn:hover{filter:brightness(1.08); transform:translateY(-1px);}
+  .btn:active{transform:translateY(1px) scale(.99);}
+  .btn.ghost{
+    background:rgba(255,255,255,.06); color:var(--txt);
+    border:1px solid var(--line); box-shadow:none; font-weight:500;
+  }
+  .btn.ghost:hover{background:rgba(255,255,255,.11);}
+
+  .result{
+    margin-top:18px; display:grid; grid-template-columns:300px 1fr;
+    gap:24px; align-items:center;
+    animation:pop .45s cubic-bezier(.2,.9,.25,1);
+  }
+  .result[data-show="0"]{display:none;}
+  @keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @media (max-width:720px){ .result{grid-template-columns:1fr; gap:18px;} }
+
+  .chartwrap{position:relative; width:100%; max-width:300px; margin:0 auto; aspect-ratio:1/1;}
+  .chartwrap svg{display:block; width:100%; height:100%; overflow:visible;}
+  .center{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    pointer-events:none; padding:0 52px;
+  }
+  .cname{
+    font-size:12.5px; color:var(--dim); max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ctop{font-size:19px; font-weight:700; margin:7px 0 1px; line-height:1.2; word-break:break-word;}
+  .cpct{font-size:29px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+
+  .legend{display:grid; gap:9px;}
+  .itemrow{
+    position:relative; overflow:hidden;
+    display:grid; grid-template-columns:10px 1fr auto; gap:10px; align-items:center;
+    padding:9px 12px 11px; border:1px solid var(--line); border-radius:12px;
+    background:rgba(255,255,255,.03);
+    opacity:0; transform:translateY(8px);
+    transition:opacity .35s ease, transform .35s ease;
+  }
+  .itemrow.in{opacity:1; transform:none;}
+  .itemrow .dot{width:10px; height:10px; border-radius:50%; box-shadow:0 0 10px currentColor;}
+  .itemrow .lbl{font-size:14px; font-weight:600; letter-spacing:.01em; overflow:hidden; text-overflow:ellipsis;}
+  .itemrow .val{font-size:13.5px; color:#e6d8f0; font-variant-numeric:tabular-nums;}
+  .itemrow .bar{position:absolute; left:0; bottom:0; height:2px; width:100%; background:rgba(255,255,255,.055);}
+  .itemrow .bar i{display:block; height:100%; width:0; transition:width .85s cubic-bezier(.2,.8,.2,1);}
+
+  .footline{margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .verdict{
+    margin-top:14px; font-size:14px; line-height:1.8; color:#e8dcef;
+    padding:14px 16px; border-radius:14px;
+    background:linear-gradient(140deg, rgba(255,45,117,.09), rgba(168,85,247,.07));
+    border:1px solid rgba(255,255,255,.08);
+  }
+  .verdict .nm{color:#ffa8c9; font-weight:700;}
+  .badge{
+    display:inline-block; font-size:11.5px; padding:3px 11px; border-radius:999px;
+    border:1px solid; letter-spacing:.09em; font-weight:600; vertical-align:middle;
+  }
+  .tip{margin-top:14px; font-size:12px; color:#6f6279; line-height:1.7;}
+  .toast{
+    position:fixed; left:50%; bottom:32px; transform:translate(-50%,20px);
+    background:rgba(20,10,26,.92); border:1px solid var(--line); color:#fff;
+    padding:10px 18px; border-radius:999px; font-size:13px; opacity:0;
+    transition:.3s; pointer-events:none; z-index:9;
+  }
+  .toast.on{opacity:1; transform:translate(-50%,0);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="head">
+    <h1>NSFW 成分检测机</h1>
+    <p class="sub">
+      输入你的名字，用<b>伪随机</b>算法算一算体内那些见不得光的成分比例。<br>
+      同名同盐值结果恒定 —— 这是命运，不是巧合。
+    </p>
+  </div>
+
+  <div class="panel">
+    <div class="inputbar">
+      <input id="name" type="text" maxlength="24" placeholder="输入你的名字…" autocomplete="off" spellcheck="false" />
+      <button class="btn" id="go">开始检测</button>
+    </div>
+  </div>
+
+  <div class="result" id="result" data-show="0">
+    <div class="chartwrap">
+      <svg id="pie" viewBox="0 0 300 300" aria-label="成分饼图">
+        <circle cx="150" cy="150" r="110" fill="none" stroke="rgba(255,255,255,.055)" stroke-width="38"></circle>
+        <g id="segs" transform="rotate(-90 150 150)"></g>
+      </svg>
+      <div class="center">
+        <div class="cname" id="cname">—</div>
+        <div class="ctop" id="ctop">—</div>
+        <div class="cpct" id="cpct">0.0%</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="legend" id="legend"></div>
+      <div class="verdict" id="verdict"></div>
+      <div class="footline">
+        <button class="btn ghost" id="reshuffle">重抽一次</button>
+        <button class="btn ghost" id="copy">复制结果</button>
+        <span class="badge" id="badge">—</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="tip">※ 所有结果由名字的哈希种子驱动，纯属娱乐；同一名字 + 同一盐值永远得到同一张饼图。</p>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var R = 110, SW = 38, C = 2 * Math.PI * R;
+
+  var POOL = [
+    'gay', '百合', '4i', '受', '攻', '互攻', '纯爱战神', 'NTR', '双性恋', '泛性恋',
+    '无性恋', '性冷淡', '性瘾', '海王', '恋爱脑', '舔狗', '傲娇', '病娇', '腹黑',
+    '抖S', '抖M', '伪S', '假M', 'SM', '调教', '被调教', '捆绑', '拘束', '项圈',
+    '口球', '滴蜡', '鞭打', '贞操锁', '寸止', '绝顶管理', '羞耻play', '公开play',
+    '露出', '监禁', '催眠', '女装', '伪娘', '男娘', '变装', '扶她', 'TS', '性转',
+    '正太控', '萝莉控', '御姐控', '叔控', '年上控', '年下控', '人妻', '熟女',
+    '兽人', '异种', '触手', '兽耳', '足控', '手控', '声控', '丝袜控', '眼镜控',
+    '肌肉控', '巨乳控', '贫乳控', '肛塞', '扩张', '灌肠', '素股', '圣水', '电击',
+    '穿刺', '产卵', 'ABO', '生子', '女尊', '女攻男受', '群P', '换妻', '机械奸',
+    '闷骚', '痴女', '洁癖受', '铁T', '深喉', '口活', '乳交', '足交', '颜射',
+    '中出', '吞精', '恋足', '恋物', '榨精', '睡奸', '强制'
+  ];
+
+  var PALETTE = ['#ff2d75', '#ff7a45', '#ffd23f', '#4ade80', '#22d3ee',
+                 '#6d8cff', '#b06bff', '#ff5cc8', '#ff4d6d', '#2dd4bf'];
+
+  var VERDICT_TPL = [
+    function (n, a, b) {
+      return n + ' 的检测报告已经出来了：<b>' + a.label + '</b> 以 <b>' + a.pct + '%</b> 的成绩断层第一，' +
+             b.label + ' 以 ' + b.pct + '% 紧随其后，剩下的成分基本是摆设。';
+    },
+    function (n, a, b) {
+      return '分析完毕。<span class="nm">' + n + '</span> 体内 ' + a.label + ' 的含量高达 ' + a.pct + '%，' +
+             b.label + ' 占了 ' + b.pct + '% —— 建议直接把这个结果纹在锁骨上。';
+    },
+    function (n, a, b) {
+      return '<span class="nm">' + n + '</span>，' + a.pct + '% 的 ' + a.label + '，' + b.pct + '% 的 ' + b.label +
+             '。这不是倾向，这是出厂设置。';
+    },
+    function (n, a, b) {
+      return '结果不容置疑：' + a.label + ' ' + a.pct + '%、' + b.label + ' ' + b.pct + '%。' +
+             '<span class="nm">' + n + '</span> 的成分表已经没什么悬念了，收好这张图。';
+    }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var input = $('name'), goBtn = $('go'), result = $('result'), segsG = $('segs'),
+      legend = $('legend'), verdictEl = $('verdict'), cname = $('cname'),
+      ctop = $('ctop'), cpct = $('cpct'), badge = $('badge'),
+      reshuffleBtn = $('reshuffle'), copyBtn = $('copy'), toast = $('toast');
+
+  var salt = 0;
+  var current = null;
+
+  /* ---------- 伪随机内核 ---------- */
+  function hashStr(s) {
+    var h = 2166136261 >>> 0;
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h >>> 0;
+  }
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function hexA(hex, a) {
+    var n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  }
+
+  /* ---------- 分析 ---------- */
+  function analyze(name, s) {
+    var seed = hashStr(name.toLowerCase() + '::' + s);
+    var rnd = mulberry32(seed);
+
+    var arr = POOL.slice();
+    for (var i = arr.length - 1; i > 0; i--) {
+      var j = (rnd() * (i + 1)) | 0;
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
+    var n = 5 + ((rnd() * 3) | 0);
+    var picks = arr.slice(0, n);
+
+    var ws = picks.map(function () { return 0.12 + Math.pow(rnd(), 2.3) * 1.7; });
+    var sum = 0;
+    ws.forEach(function (w) { sum += w; });
+
+    var pcts = ws.map(function (w) { return Math.round(w / sum * 1000) / 10; });
+    var acc = 0;
+    pcts.forEach(function (p) { acc += p; });
+    pcts[0] = +(pcts[0] + (100 - acc)).toFixed(1);
+
+    var items = picks.map(function (label, i) { return { label: label, pct: pcts[i] }; });
+    items.sort(function (a, b) { return b.pct - a.pct; });
+    return { items: items, seed: seed };
+  }
+
+  function rankOf(p) {
+    if (p >= 32) return { t: '绝对纯粹', c: '#ff2d75' };
+    if (p >= 24) return { t: '高度疑似', c: '#ff7a45' };
+    if (p >= 17) return { t: '口味鲜明', c: '#ffd23f' };
+    return { t: '混沌杂食', c: '#22d3ee' };
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render(name, s) {
+    var data = analyze(name, s);
+    var items = data.items;
+    var colors = items.map(function (_, i) { return PALETTE[i % PALETTE.length]; });
+    current = { name: name, items: items, colors: colors };
+
+    segsG.innerHTML = '';
+    legend.innerHTML = '';
+
+    // 环形分段
+    var segEls = [];
+    var off = 0;
+    items.forEach(function (it, i) {
+      var len = it.pct / 100 * C;
+      var el = document.createElementNS(NS, 'circle');
+      el.setAttribute('cx', 150);
+      el.setAttribute('cy', 150);
+      el.setAttribute('r', R);
+      el.setAttribute('fill', 'none');
+      el.setAttribute('stroke', colors[i]);
+      el.setAttribute('stroke-width', SW);
+      el.setAttribute('stroke-dasharray', '0 ' + C);
+      el.setAttribute('stroke-dashoffset', String(-off));
+      el.style.filter = 'drop-shadow(0 0 7px ' + hexA(colors[i], 0.5) + ')';
+      segsG.appendChild(el);
+      segEls.push({ el: el, len: len });
+      off += len;
+    });
+
+    // 图例
+    var rows = [];
+    var maxP = items[0].pct;
+    items.forEach(function (it, i) {
+      var row = document.createElement('div');
+      row.className = 'itemrow';
+      row.innerHTML =
+        '<span class="dot" style="background:' + colors[i] + ';color:' + colors[i] + '"></span>' +
+        '<span class="lbl">' + esc(it.label) + '</span>' +
+        '<span class="val">' + it.pct.toFixed(1) + '%</span>' +
+        '<span class="bar"><i style="background:' + colors[i] + '"></i></span>';
+      legend.appendChild(row);
+      rows.push({ row: row, bar: row.querySelector('.bar i'), w: (it.pct / maxP * 100) });
+    });
+
+    // 中心
+    cname.textContent = name;
+    ctop.textContent = items[0].label;
+    ctop.style.color = colors[0];
+    cpct.textContent = '0.0%';
+
+    // 评级
+    var rk = rankOf(items[0].pct);
+    badge.textContent = rk.t;
+    badge.style.color = rk.c;
+    badge.style.borderColor = hexA(rk.c, 0.45);
+    badge.style.background = hexA(rk.c, 0.1);
+
+    // 结论
+    var vr = mulberry32(data.seed ^ 0x5bf03635);
+    var tpl = VERDICT_TPL[(vr() * VERDICT_TPL.length) | 0];
+    verdictEl.innerHTML = tpl('<span class="nm">' + esc(name) + '</span>', items[0], items[1]);
+
+    result.dataset.show = '1';
+    animate(segEls, rows, items[0].pct);
+  }
+
+  function animate(segEls, rows, topPct) {
+    var n = segEls.length;
+    var t0 = performance.now();
+    var DUR = 1250;
+
+    function frame(now) {
+      var p = Math.min(1, (now - t0) / DUR);
+      var e = 1 - Math.pow(1 - p, 3);
+
+      for (var i = 0; i < n; i++) {
+        var a = i * 0.4 / n;
+        var b = a + 0.6 + 0.4 / n;
+        var local = clamp((e - a) / (b - a), 0, 1);
+        var len = Math.max(0, segEls[i].len * local - 3 * local);
+        segEls[i].el.setAttribute('stroke-dasharray', len + ' ' + C);
+      }
+      cpct.textContent = (topPct * e).toFixed(1) + '%';
+
+      if (p < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    rows.forEach(function (r, i) {
+      setTimeout(function () {
+        r.row.classList.add('in');
+        setTimeout(function () { r.bar.style.width = r.w + '%'; }, 40);
+      }, 110 + i * 95);
+    });
+  }
+
+  /* ---------- 交互 ---------- */
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () { toast.classList.remove('on'); }, 1600);
+  }
+
+  function run() {
+    var name = input.value.trim();
+    if (!name) {
+      input.classList.remove('shake');
+      void input.offsetWidth;
+      input.classList.add('shake');
+      input.focus();
+      showToast('先输入名字，命运才能开始算');
+      return;
+    }
+    salt = 0;
+    render(name, salt);
+    setTimeout(function () {
+      result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 120);
+  }
+
+  goBtn.addEventListener('click', run);
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') run();
+  });
+
+  reshuffleBtn.addEventListener('click', function () {
+    if (!current) return;
+    salt += 1;
+    render(current.name, salt);
+    showToast('重新抽了一次，命运已改写');
+  });
+
+  copyBtn.addEventListener('click', function () {
+    if (!current) return;
+    var lines = ['【NSFW 成分检测】' + current.name, '---------'];
+    current.items.forEach(function (it) {
+      lines.push(it.label + '  ' + it.pct.toFixed(1) + '%');
+    });
+    lines.push('---------', verdictEl.textContent.trim());
+    var text = lines.join('\n');
+
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (err) {}
+      document.body.removeChild(ta);
+      showToast('已复制到剪贴板');
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        showToast('已复制到剪贴板');
+      }, fallback);
+    } else {
+      fallback();
+    }
+  });
+
+  input.focus();
+})();
+</script>
+</body>
+</html>
